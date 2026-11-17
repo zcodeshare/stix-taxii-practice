@@ -1,3 +1,4 @@
+
 package com.in2it.cats.stixtaxiipractice.service.impl;
 
 import com.in2it.cats.stixtaxiipractice.client.TaxiiClient;
@@ -13,9 +14,11 @@ public class TaxiiClientServiceImpl implements TaxiiClientService {
 
     @Override
     public String discoverTaxiiServer() {
+        return taxiiClient.discoverTaxiiServer();
+    }
 
-        String response = taxiiClient.discoverTaxiiServer();
-
-        return response;
+    @Override
+    public String getApiRootInformation() {
+        return taxiiClient.getApiRootInformation();
     }
 }
