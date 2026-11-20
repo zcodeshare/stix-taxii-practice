@@ -34,8 +34,7 @@ public class TaxiiController {
 
 
     @GetMapping("/collections/{collectionId}/objects/all")
-    public TaxiiResponseDTO getAllObjects(@PathVariable String collectionId, @RequestParam(defaultValue = "100") int limit) {
-
+    public TaxiiResponseDTO getAllObjects(@PathVariable String collectionId, @RequestParam(defaultValue = "10") int limit) {
         TaxiiResponseDTO response = taxiiClientService.getAllObjects(collectionId, limit);
         return response;
     }

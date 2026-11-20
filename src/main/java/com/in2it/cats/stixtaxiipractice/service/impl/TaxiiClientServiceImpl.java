@@ -11,10 +11,11 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import feign.FeignException;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryRegistry;
 
 @Service
 @AllArgsConstructor
@@ -23,6 +24,7 @@ public class TaxiiClientServiceImpl implements TaxiiClientService {
 
     private final TaxiiClient taxiiClient;
     private final ObjectMapper objectMapper;
+    private final RetryRegistry retryRegistry;
 
     @Override
     public String discoverTaxiiServer() {
@@ -41,7 +43,7 @@ public class TaxiiClientServiceImpl implements TaxiiClientService {
 
     @Override
     public String getObjects(String collectionId, int limit, String next) {
-        return taxiiClient.getObjects(collectionId, limit, next);
+        return getObjectsWithRetry(collectionId, limit, next);
     }
 
     @Override
@@ -99,84 +101,17 @@ public class TaxiiClientServiceImpl implements TaxiiClientService {
     }
 
 
-
     private String getObjectsWithRetry(String collectionId, int limit, String next) {
 
-        int maxRetries = 3;
-        int attempt = 0;
+        Retry retry = retryRegistry.retry("taxiiRetry");
 
-        while (true) {
-            try {
-                return taxiiClient.getObjects(collectionId, limit, next);
+        try {
+            String response = retry.executeSupplier(() -> taxiiClient.getObjects(collectionId, limit, next));
+            return response;
 
-            } catch (FeignException.TooManyRequests exception) {
-
-                if (attempt >= maxRetries) {
-                    log.error(
-                            "TAXII API failed after {} retries. Collection ID: {}, Cursor: {}",
-                            maxRetries,
-                            collectionId,
-                            next,
-                            exception
-                    );
-
-                    throw exception;
-                }
-
-                long delay = 2000L * (1L << attempt);
-
-                Collection<String> retryAfterValues = exception.responseHeaders()
-                        .entrySet()
-                        .stream()
-                        .filter(entry -> "Retry-After".equalsIgnoreCase(entry.getKey()))
-                        .map(Map.Entry::getValue)
-                        .findFirst()
-                        .orElse(null);
-
-                if (retryAfterValues != null && !retryAfterValues.isEmpty()) {
-                    try {
-                        delay = Long.parseLong(
-                                retryAfterValues.iterator().next()
-                        ) * 1000L;
-                    } catch (NumberFormatException ignored) {
-                        log.warn("Could not parse Retry-After header. Using backoff.");
-                    }
-                }
-
-                log.warn(
-                        "TAXII rate limit reached. Attempt: {}. Retrying after {} ms",
-                        attempt + 1,
-                        delay
-                );
-
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException interruptedException) {
-                    Thread.currentThread().interrupt();
-
-                    throw new IllegalStateException(
-                            "TAXII pagination interrupted",
-                            interruptedException
-                    );
-                }
-
-                attempt++;
-
-            } catch (FeignException exception) {
-
-                log.error(
-                        "TAXII API request failed. HTTP Status: {}, Collection ID: {}, Cursor: {}",
-                        exception.status(),
-                        collectionId,
-                        next,
-                        exception
-                );
-
-                throw exception;
-            }
+        } catch (FeignException exception) {
+            log.error("TAXII API request failed after retries. HTTP Status: {}, Collection ID: {}, Cursor: {}", exception.status(), collectionId, next, exception);
+            throw exception;
         }
     }
-
-
-
 }
